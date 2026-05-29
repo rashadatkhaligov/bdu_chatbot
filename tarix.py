@@ -149,6 +149,28 @@ def load_knowledge() -> str:
                 continue
             parts.append(f"\n{'='*50}\nBÖLMƏ: {sn}\n{'='*50}")
 
+            # ── İmtahan cədvəli ──────────────────────────
+            if sn.lower() == "imtahanlar":
+                parts.append("İmtahan Cədvəli (Tarix fakültəsi):")
+                parts.append("Tarix | Fənn | Kurs | Qrup | Tələbə sayı | Otaq | İmtahan növü")
+                for row in rows[1:]:
+                    if not any(c for c in row if c is not None):
+                        continue
+                    tarix   = str(row[0]).split(" ")[0] if row[0] else ""
+                    # datetime formatını düzəlt
+                    if hasattr(row[0], 'strftime'):
+                        tarix = row[0].strftime("%d.%m.%Y")
+                    fenn    = str(row[1]).strip() if row[1] else ""
+                    kurs    = str(row[2]).strip() if row[2] else ""
+                    qrup    = str(row[3]).strip() if row[3] else ""
+                    say     = str(row[4]).strip() if row[4] else ""
+                    otaq    = str(row[6]).strip() if row[6] else ""
+                    nov     = str(row[7]).strip() if row[7] else ""
+                    if fenn:
+                        parts.append(f"{tarix} | {fenn} | {kurs} | {qrup} | {say} nəfər | {otaq} | {nov}")
+                continue
+
+            # ── Əməkdaş cədvəli ─────────────────────────
             if "əməkdaş" in sn.lower():
                 parts.append("Fakültənin əməkdaşları:")
                 for row in rows[1:]:
