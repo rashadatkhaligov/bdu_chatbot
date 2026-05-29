@@ -18,7 +18,7 @@ from google.genai import types
 # ─────────────────────────────────────────────
 # KONFIQURASIYA
 # ─────────────────────────────────────────────
-GEMINI_API_KEY = os.environ.get("AIzaSyDMgFY1CmfCOgtgvTO7UgjIQwfaJvLBqHU", "")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL   = "gemini-2.5-flash"
 MAX_MSG_LEN    = 800
 MAX_HIST_TURNS = 8
