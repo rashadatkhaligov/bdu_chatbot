@@ -43,6 +43,7 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Noto+Serif:wght@600;700&display=swap');
 
+/* ── Açıq rejim (default) ── */
 :root {
     --navy:       #0d2137;
     --navy-mid:   #163352;
@@ -50,18 +51,34 @@ st.markdown("""
     --blue-light: #2a6abf;
     --gold:       #c8962a;
     --gold-light: #e8b84b;
-    --cream:      #f7f4ee;
-    --white:      #ffffff;
+    --bg:         #f7f4ee;
+    --surface:    #ffffff;
     --text:       #1a1e2e;
+    --text-soft:  #4a5568;
     --border:     #e2e8f0;
     --shadow:     0 4px 24px rgba(13,33,55,0.10);
+    --input-bg:   #ffffff;
     --font-main:  'Noto Sans', sans-serif;
     --font-serif: 'Noto Serif', serif;
 }
 
-html, body, [class*="css"], * { font-family: var(--font-main) !important; }
-.stApp { background: var(--cream) !important; }
+/* ── Tünd rejim ── */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg:        #0f1923;
+        --surface:   #1a2635;
+        --text:      #e8edf5;
+        --text-soft: #94a3b8;
+        --border:    #2a3a4e;
+        --shadow:    0 4px 24px rgba(0,0,0,0.35);
+        --input-bg:  #1a2635;
+    }
+}
 
+html, body, [class*="css"], * { font-family: var(--font-main) !important; }
+.stApp { background: var(--bg) !important; }
+
+/* ── Sidebar — həmişə tünd ── */
 [data-testid="stSidebar"] { background: var(--navy) !important; border-right: none !important; }
 [data-testid="stSidebar"] * { font-family: var(--font-main) !important; color: rgba(255,255,255,0.88) !important; }
 [data-testid="stSidebar"] .stButton button {
@@ -94,6 +111,7 @@ html, body, [class*="css"], * { font-family: var(--font-main) !important; }
 .lang-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .lang-chip { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; padding: 4px 10px; font-size: 0.74rem; color: rgba(255,255,255,0.7) !important; }
 
+/* ── Başlıq — həmişə tünd ── */
 .page-header {
     background: linear-gradient(135deg, var(--navy) 0%, var(--navy-mid) 60%, var(--blue) 100%);
     border-radius: 18px; padding: 30px 34px; margin-bottom: 6px;
@@ -111,12 +129,25 @@ html, body, [class*="css"], * { font-family: var(--font-main) !important; }
 
 .accent-bar { height: 3px; background: linear-gradient(90deg, var(--gold), var(--gold-light), transparent); border-radius: 2px; margin-bottom: 22px; }
 
+/* ── Chat mesajları — fona uyğun ── */
 [data-testid="stChatMessage"] { background: transparent !important; border: none !important; padding: 4px 0 !important; }
-[data-testid="stChatMessage"] p, [data-testid="stChatMessage"] li, [data-testid="stChatMessage"] span { font-family: var(--font-main) !important; }
+[data-testid="stChatMessage"] p,
+[data-testid="stChatMessage"] li,
+[data-testid="stChatMessage"] span,
+[data-testid="stChatMessage"] div,
+[data-testid="stChatMessageContent"] { font-family: var(--font-main) !important; color: var(--text) !important; }
+.stMarkdown p, .stMarkdown li, .stMarkdown span, .stMarkdown strong { color: var(--text) !important; }
 
-[data-testid="stChatInput"] { background: var(--white) !important; border-radius: 14px !important; border: 2px solid var(--border) !important; box-shadow: 0 2px 12px rgba(13,33,55,0.07) !important; transition: border-color .2s !important; }
+/* ── Giriş sahəsi — fona uyğun ── */
+[data-testid="stChatInput"] {
+    background: var(--input-bg) !important;
+    border-radius: 14px !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: 0 2px 12px rgba(13,33,55,0.07) !important;
+    transition: border-color .2s !important;
+}
 [data-testid="stChatInput"]:focus-within { border-color: var(--blue-light) !important; box-shadow: 0 2px 16px rgba(30,77,140,0.12) !important; }
-[data-testid="stChatInput"] textarea { font-family: var(--font-main) !important; font-size: 0.9rem !important; color: var(--text) !important; }
+[data-testid="stChatInput"] textarea { font-family: var(--font-main) !important; font-size: 0.9rem !important; color: var(--text) !important; background: transparent !important; }
 [data-testid="stChatInput"] button { background: linear-gradient(135deg, var(--navy-mid), var(--blue)) !important; border-radius: 10px !important; border: none !important; }
 
 .stSpinner > div { border-top-color: var(--gold) !important; }
