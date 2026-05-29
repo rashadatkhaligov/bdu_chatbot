@@ -1,6 +1,6 @@
 """
 TARİX AI Köməkçi — BDU Tarix Fakültəsi
-Streamlit versiyası · Peşəkar interfeys
+Streamlit versiyası · Context Cache ilə token qənaəti
 
 İşə salmaq:
     streamlit run tarix.py
@@ -8,6 +8,7 @@ Streamlit versiyası · Peşəkar interfeys
 
 import os
 import re
+import time
 from pathlib import Path
 
 import streamlit as st
@@ -22,6 +23,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL   = "gemini-2.5-flash"
 MAX_MSG_LEN    = 800
 MAX_HIST_TURNS = 8
+CACHE_TTL_SEC  = 21600         # keş 6 saat saxlanılır
 KNOWLEDGE_FILE = Path(__file__).parent / "BDU Tarix Chatbot.xlsx"
 
 # ─────────────────────────────────────────────
@@ -35,7 +37,7 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────
-# CSS — Noto Sans (tam Azərbaycan hərfi dəstəyi)
+# CSS
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -51,242 +53,76 @@ st.markdown("""
     --cream:      #f7f4ee;
     --white:      #ffffff;
     --text:       #1a1e2e;
-    --text-muted: #6b7280;
     --border:     #e2e8f0;
     --shadow:     0 4px 24px rgba(13,33,55,0.10);
     --font-main:  'Noto Sans', sans-serif;
     --font-serif: 'Noto Serif', serif;
 }
 
-/* ── Bütün elementlər Noto Sans ── */
-html, body, [class*="css"], * {
-    font-family: var(--font-main) !important;
-}
+html, body, [class*="css"], * { font-family: var(--font-main) !important; }
+.stApp { background: var(--cream) !important; }
 
-.stApp {
-    background: var(--cream) !important;
-}
-
-/* ── Sidebar ── */
-[data-testid="stSidebar"] {
-    background: var(--navy) !important;
-    border-right: none !important;
-}
-[data-testid="stSidebar"] * {
-    font-family: var(--font-main) !important;
-    color: rgba(255,255,255,0.88) !important;
-}
+[data-testid="stSidebar"] { background: var(--navy) !important; border-right: none !important; }
+[data-testid="stSidebar"] * { font-family: var(--font-main) !important; color: rgba(255,255,255,0.88) !important; }
 [data-testid="stSidebar"] .stButton button {
     background: rgba(200,150,42,0.15) !important;
     border: 1px solid rgba(200,150,42,0.4) !important;
     color: var(--gold-light) !important;
-    border-radius: 8px !important;
-    font-weight: 500 !important;
-    font-family: var(--font-main) !important;
+    border-radius: 8px !important; font-weight: 500 !important;
     transition: all .2s !important;
 }
 [data-testid="stSidebar"] .stButton button:hover {
     background: rgba(200,150,42,0.28) !important;
     border-color: var(--gold-light) !important;
 }
-[data-testid="stSidebar"] hr {
-    border-color: rgba(255,255,255,0.1) !important;
-}
+[data-testid="stSidebar"] hr { border-color: rgba(255,255,255,0.1) !important; }
 
-/* ── Sidebar brand ── */
-.sidebar-brand {
-    padding: 8px 0 20px;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
-    margin-bottom: 20px;
-}
-.sidebar-brand h3 {
-    font-family: var(--font-serif) !important;
-    font-size: 1.15rem !important;
-    font-weight: 700 !important;
-    color: #fff !important;
-    margin: 0 !important;
-}
-.sidebar-brand span {
-    font-size: 0.72rem;
-    color: var(--gold-light) !important;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    font-family: var(--font-main) !important;
-}
+.sidebar-brand { padding: 8px 0 20px; border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 20px; }
+.sidebar-brand h3 { font-family: var(--font-serif) !important; font-size: 1.15rem !important; font-weight: 700 !important; color: #fff !important; margin: 0 !important; }
+.sidebar-brand span { font-size: 0.72rem; color: var(--gold-light) !important; letter-spacing: 0.07em; text-transform: uppercase; }
 
-/* ── Status nöqtəsi ── */
-.status-line {
-    font-size: 0.75rem;
-    color: rgba(255,255,255,0.5) !important;
-    display: flex;
-    align-items: center;
-    margin-bottom: 14px;
-    font-family: var(--font-main) !important;
-}
-.status-dot {
-    display: inline-block;
-    width: 7px; height: 7px;
-    border-radius: 50%;
-    margin-right: 7px;
-    flex-shrink: 0;
-}
+.status-line { font-size: 0.75rem; color: rgba(255,255,255,0.5) !important; display: flex; align-items: center; margin-bottom: 14px; }
+.status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; flex-shrink: 0; }
 .status-dot.online  { background: #22c55e; animation: pulse 2s infinite; }
 .status-dot.offline { background: #ef4444; }
-@keyframes pulse {
-    0%,100%{ opacity:1; transform:scale(1); }
-    50%    { opacity:.6; transform:scale(1.35); }
-}
+@keyframes pulse { 0%,100%{ opacity:1; transform:scale(1); } 50%{ opacity:.6; transform:scale(1.35); } }
 
-/* ── Stat kartları ── */
-.stat-card {
-    background: rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 10px;
-    padding: 11px 14px;
-    margin-bottom: 8px;
-    font-family: var(--font-main) !important;
-}
-.stat-card .s-label {
-    font-size: 0.68rem;
-    color: rgba(255,255,255,0.38) !important;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    margin-bottom: 3px;
-    font-family: var(--font-main) !important;
-}
-.stat-card .s-value {
-    font-size: 1.05rem;
-    font-weight: 600;
-    color: var(--gold-light) !important;
-    font-family: var(--font-main) !important;
-}
+.stat-card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 11px 14px; margin-bottom: 8px; }
+.stat-card .s-label { font-size: 0.68rem; color: rgba(255,255,255,0.38) !important; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 3px; }
+.stat-card .s-value { font-size: 1.05rem; font-weight: 600; color: var(--gold-light) !important; }
 
-/* ── Dil nişanları ── */
 .lang-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
-.lang-chip {
-    background: rgba(255,255,255,0.07);
-    border: 1px solid rgba(255,255,255,0.12);
-    border-radius: 6px;
-    padding: 4px 10px;
-    font-size: 0.74rem;
-    color: rgba(255,255,255,0.7) !important;
-    font-family: var(--font-main) !important;
-}
+.lang-chip { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; padding: 4px 10px; font-size: 0.74rem; color: rgba(255,255,255,0.7) !important; }
 
-/* ── Başlıq ── */
 .page-header {
     background: linear-gradient(135deg, var(--navy) 0%, var(--navy-mid) 60%, var(--blue) 100%);
-    border-radius: 18px;
-    padding: 30px 34px;
-    margin-bottom: 6px;
-    display: flex;
-    align-items: center;
-    gap: 22px;
-    position: relative;
-    overflow: hidden;
-    box-shadow: var(--shadow);
+    border-radius: 18px; padding: 30px 34px; margin-bottom: 6px;
+    display: flex; align-items: center; gap: 22px;
+    position: relative; overflow: hidden; box-shadow: var(--shadow);
 }
-.page-header::before {
-    content: "";
-    position: absolute; top: -40px; right: -40px;
-    width: 220px; height: 220px; border-radius: 50%;
-    background: radial-gradient(circle, rgba(200,150,42,0.18) 0%, transparent 70%);
-}
-.page-header::after {
-    content: "";
-    position: absolute; bottom: -60px; left: 30%;
-    width: 300px; height: 300px; border-radius: 50%;
-    background: radial-gradient(circle, rgba(42,106,191,0.15) 0%, transparent 70%);
-}
-.header-icon {
-    width: 62px; height: 62px; border-radius: 14px;
-    background: linear-gradient(135deg, var(--gold), var(--gold-light));
-    display: flex; align-items: center; justify-content: center;
-    font-size: 1.9rem;
-    box-shadow: 0 8px 24px rgba(200,150,42,0.35);
-    flex-shrink: 0; position: relative; z-index: 1;
-}
+.page-header::before { content: ""; position: absolute; top: -40px; right: -40px; width: 220px; height: 220px; border-radius: 50%; background: radial-gradient(circle, rgba(200,150,42,0.18) 0%, transparent 70%); }
+.page-header::after  { content: ""; position: absolute; bottom: -60px; left: 30%; width: 300px; height: 300px; border-radius: 50%; background: radial-gradient(circle, rgba(42,106,191,0.15) 0%, transparent 70%); }
+.header-icon { width: 62px; height: 62px; border-radius: 14px; background: linear-gradient(135deg, var(--gold), var(--gold-light)); display: flex; align-items: center; justify-content: center; font-size: 1.9rem; box-shadow: 0 8px 24px rgba(200,150,42,0.35); flex-shrink: 0; position: relative; z-index: 1; }
 .header-text { position: relative; z-index: 1; }
-.header-text h1 {
-    font-family: var(--font-serif) !important;
-    color: #fff !important;
-    font-size: 1.7rem !important;
-    font-weight: 700 !important;
-    margin: 0 0 4px !important;
-    line-height: 1.2 !important;
-}
-.header-text p {
-    color: rgba(255,255,255,0.58) !important;
-    font-size: 0.8rem !important;
-    margin: 0 !important;
-    letter-spacing: 0.04em !important;
-    text-transform: uppercase !important;
-    font-family: var(--font-main) !important;
-}
+.header-text h1 { font-family: var(--font-serif) !important; color: #fff !important; font-size: 1.7rem !important; font-weight: 700 !important; margin: 0 0 4px !important; line-height: 1.2 !important; }
+.header-text p { color: rgba(255,255,255,0.58) !important; font-size: 0.8rem !important; margin: 0 !important; letter-spacing: 0.04em !important; text-transform: uppercase !important; }
 .header-badges { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-.badge {
-    background: rgba(255,255,255,0.1);
-    border: 1px solid rgba(255,255,255,0.18);
-    border-radius: 20px;
-    padding: 3px 11px;
-    font-size: 0.71rem;
-    color: rgba(255,255,255,0.75) !important;
-    font-family: var(--font-main) !important;
-}
+.badge { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.18); border-radius: 20px; padding: 3px 11px; font-size: 0.71rem; color: rgba(255,255,255,0.75) !important; }
 
-/* ── Accent xətt ── */
-.accent-bar {
-    height: 3px;
-    background: linear-gradient(90deg, var(--gold), var(--gold-light), transparent);
-    border-radius: 2px;
-    margin-bottom: 22px;
-}
+.accent-bar { height: 3px; background: linear-gradient(90deg, var(--gold), var(--gold-light), transparent); border-radius: 2px; margin-bottom: 22px; }
 
-/* ── Chat mesajları ── */
-[data-testid="stChatMessage"] {
-    background: transparent !important;
-    border: none !important;
-    padding: 4px 0 !important;
-    font-family: var(--font-main) !important;
-}
-[data-testid="stChatMessage"] p,
-[data-testid="stChatMessage"] li,
-[data-testid="stChatMessage"] span {
-    font-family: var(--font-main) !important;
-}
+[data-testid="stChatMessage"] { background: transparent !important; border: none !important; padding: 4px 0 !important; }
+[data-testid="stChatMessage"] p, [data-testid="stChatMessage"] li, [data-testid="stChatMessage"] span { font-family: var(--font-main) !important; }
 
-/* ── Chat giriş sahəsi ── */
-[data-testid="stChatInput"] {
-    background: var(--white) !important;
-    border-radius: 14px !important;
-    border: 2px solid var(--border) !important;
-    box-shadow: 0 2px 12px rgba(13,33,55,0.07) !important;
-    transition: border-color .2s !important;
-}
-[data-testid="stChatInput"]:focus-within {
-    border-color: var(--blue-light) !important;
-    box-shadow: 0 2px 16px rgba(30,77,140,0.12) !important;
-}
-[data-testid="stChatInput"] textarea {
-    font-family: var(--font-main) !important;
-    font-size: 0.9rem !important;
-    color: var(--text) !important;
-}
-[data-testid="stChatInput"] button {
-    background: linear-gradient(135deg, var(--navy-mid), var(--blue)) !important;
-    border-radius: 10px !important;
-    border: none !important;
-}
+[data-testid="stChatInput"] { background: var(--white) !important; border-radius: 14px !important; border: 2px solid var(--border) !important; box-shadow: 0 2px 12px rgba(13,33,55,0.07) !important; transition: border-color .2s !important; }
+[data-testid="stChatInput"]:focus-within { border-color: var(--blue-light) !important; box-shadow: 0 2px 16px rgba(30,77,140,0.12) !important; }
+[data-testid="stChatInput"] textarea { font-family: var(--font-main) !important; font-size: 0.9rem !important; color: var(--text) !important; }
+[data-testid="stChatInput"] button { background: linear-gradient(135deg, var(--navy-mid), var(--blue)) !important; border-radius: 10px !important; border: none !important; }
 
-/* ── Spinner ── */
 .stSpinner > div { border-top-color: var(--gold) !important; }
-
-/* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-
-/* ── Streamlit gizlət ── */
 #MainMenu, footer, header { visibility: hidden; }
 .block-container { padding-top: 1.5rem !important; max-width: 960px !important; }
 </style>
@@ -294,7 +130,7 @@ html, body, [class*="css"], * {
 
 
 # ─────────────────────────────────────────────
-# MƏLUMAT BAZASINI YÜKLƏ
+# MƏLUMAT BAZASINI YÜKLƏ (bir dəfə)
 # ─────────────────────────────────────────────
 @st.cache_resource(show_spinner="📚 Məlumat bazası yüklənir…")
 def load_knowledge() -> str:
@@ -343,37 +179,66 @@ def load_knowledge() -> str:
 
 
 # ─────────────────────────────────────────────
+# CONTEXT CACHE — məlumat bazasını bir dəfə
+# Gemini-yə yükləyirik, hər sorğuda yalnız sual gedir
+# ─────────────────────────────────────────────
+@st.cache_resource(show_spinner="⚡ Keş yaradılır…")
+def create_cache(knowledge: str, system: str) -> str | None:
+    """
+    Məlumat bazasını Gemini Context Cache-ə yükləyir.
+    Cache adını qaytarır. Xəta olarsa None qaytarır.
+    Minimum 32.768 token tələb olunur.
+    """
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        cache  = client.caches.create(
+            model=GEMINI_MODEL,
+            config=types.CreateCachedContentConfig(
+                system_instruction=system,
+                contents=[
+                    types.Content(
+                        role="user",
+                        parts=[types.Part(text=knowledge)]
+                    ),
+                    types.Content(
+                        role="model",
+                        parts=[types.Part(text="Məlumat bazası qəbul edildi. Suallarınızı gözləyirəm.")]
+                    ),
+                ],
+                ttl=f"{CACHE_TTL_SEC}s",
+            )
+        )
+        return cache.name
+    except Exception as e:
+        # Cache minimum token tələbi yerinə yetirilmədikdə fallback-ə keçir
+        st.session_state["cache_error"] = str(e)
+        return None
+
+
+# ─────────────────────────────────────────────
 # DİL AŞKARLAMA
 # ─────────────────────────────────────────────
 def detect_language(text: str) -> str:
-    # Kiril hərfləri → Rus
     if re.search(r"[\u0400-\u04FF]", text):
         return "ru"
-    # Azərbaycan xüsusi hərfləri → Azərbaycan
     if re.search(r"[əıöüğşçƏIÖÜĞŞÇ]", text):
         return "az"
-    # Əgər mətn tamamilə ingilis sözlərindən ibarətdirsə → İngilis
-    # Yəni ən azı 2 ingilis sözü və Azərbaycan sözü yoxdursa
-    az_words = {"salam", "necəsən", "necəsiniz", "bəli", "xeyr", "hə",
-                "yox", "nə", "bu", "bir", "var", "yox", "kim", "harada",
-                "nece", "niyə", "nədir", "hansı", "neçə", "təşəkkür",
-                "sagol", "sağol", "əla", "yaxşı", "pis", "cənab", "xanım"}
+    az_words = {"salam","necəsən","necəsiniz","bəli","xeyr","hə","yox","nə",
+                "bu","bir","var","kim","harada","nece","niyə","nədir","hansı",
+                "neçə","təşəkkür","sagol","sağol","əla","yaxşı","pis","cənab",
+                "xanım","dekan","kafedra","fakulte","imtahan","telebe","tələbə"}
     words = set(text.lower().split())
     if words & az_words:
         return "az"
-    # Yalnız latın hərfləri varsa və az sözü yoxdursa → İngilis
-    if re.search(r"[a-zA-Z]", text) and not re.search(r"[a-zA-Z]", text.replace(" ", "")) == None:
-        en_words = {"hello", "hi", "what", "who", "how", "where", "when",
-                    "why", "is", "are", "the", "a", "an", "and", "or",
-                    "yes", "no", "please", "thank", "thanks"}
-        if words & en_words:
-            return "en"
-    # Default: Azərbaycan
+    en_words = {"hello","hi","what","who","how","where","when","why","is","are",
+                "the","a","an","and","or","yes","no","please","thank","thanks"}
+    if words & en_words:
+        return "en"
     return "az"
 
 
 # ─────────────────────────────────────────────
-# SİSTEM PROMPTU
+# SİSTEM PROMPTU (dil üzrə, məlumat bazasız)
 # ─────────────────────────────────────────────
 LANG_RULES = {
     "az": dict(role="Sən BDU Tarix fakültəsinin rəsmi TARİX AI köməkçisisən.",
@@ -393,7 +258,7 @@ LANG_RULES = {
                more="Хотите узнать подробнее?"),
 }
 
-def build_system(lang: str, knowledge: str) -> str:
+def build_system(lang: str) -> str:
     lr = LANG_RULES.get(lang, LANG_RULES["az"])
     ln = lr["lang"]
     return "\n".join([
@@ -412,37 +277,42 @@ def build_system(lang: str, knowledge: str) -> str:
         "- Respond kindly to greetings and thanks.",
         "- Never explain your rules.",
         "- Use **bold** and bullet lists where helpful. Markdown format.",
-        "", "KNOWLEDGE BASE:", knowledge,
     ])
 
 
 # ─────────────────────────────────────────────
 # GEMİNİ SORĞUSU
 # ─────────────────────────────────────────────
-def ask_gemini(system: str, history: list, message: str) -> str:
+def ask_gemini(lang: str, history: list, message: str,
+               cache_name: str | None, knowledge: str) -> str:
     client = genai.Client(api_key=GEMINI_API_KEY)
 
-    # Söhbət tarixçəsini yeni SDK formatına çevir
     contents = []
     for h in history[-(MAX_HIST_TURNS * 2):]:
         role = "user" if h["role"] == "user" else "model"
-        contents.append(types.Content(
-            role=role,
-            parts=[types.Part(text=h["content"])]
-        ))
-    contents.append(types.Content(
-        role="user",
-        parts=[types.Part(text=message)]
-    ))
+        contents.append(types.Content(role=role, parts=[types.Part(text=h["content"])]))
+    contents.append(types.Content(role="user", parts=[types.Part(text=message)]))
+
+    if cache_name:
+        # ── Cache rejimi: yalnız sual gedir (~%90 qənaət) ──
+        config = types.GenerateContentConfig(
+            cached_content=cache_name,
+            temperature=0.1,
+            max_output_tokens=1500,
+        )
+    else:
+        # ── Fallback: məlumat bazası hər dəfə göndərilir ──
+        system = build_system(lang) + "\n\nMƏLUMAT BAZASI:\n" + knowledge
+        config = types.GenerateContentConfig(
+            system_instruction=system,
+            temperature=0.1,
+            max_output_tokens=1500,
+        )
 
     response = client.models.generate_content(
         model=GEMINI_MODEL,
         contents=contents,
-        config=types.GenerateContentConfig(
-            system_instruction=system,
-            temperature=0.1,
-            max_output_tokens=3000,
-        )
+        config=config,
     )
 
     if not response.candidates:
@@ -453,10 +323,10 @@ def ask_gemini(system: str, history: list, message: str) -> str:
 # ─────────────────────────────────────────────
 # SESSION STATE
 # ─────────────────────────────────────────────
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "total_queries" not in st.session_state:
-    st.session_state.total_queries = 0
+if "messages"      not in st.session_state: st.session_state.messages      = []
+if "total_queries" not in st.session_state: st.session_state.total_queries = 0
+if "cache_name"    not in st.session_state: st.session_state.cache_name    = None
+if "cache_ready"   not in st.session_state: st.session_state.cache_ready   = False
 
 
 # ─────────────────────────────────────────────
@@ -470,7 +340,6 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    # Status — API açarı kodda olduğu üçün həmişə aktiv
     st.markdown("""
     <div class="status-line">
         <span class="status-dot online"></span>Sistem aktiv
@@ -479,12 +348,16 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Statistika kartları
-    kb_exists = KNOWLEDGE_FILE.exists()
+    kb_exists   = KNOWLEDGE_FILE.exists()
+    cache_label = "⚡ Aktiv" if st.session_state.cache_ready else "○ Gözləyir"
     st.markdown(f"""
     <div class="stat-card">
         <div class="s-label">Məlumat Bazası</div>
         <div class="s-value">{'✓ Yüklənib' if kb_exists else '✗ Tapılmadı'}</div>
+    </div>
+    <div class="stat-card">
+        <div class="s-label">Context Cache</div>
+        <div class="s-value">{cache_label}</div>
     </div>
     <div class="stat-card">
         <div class="s-label">Ümumi Sorğular</div>
@@ -498,19 +371,15 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Dil dəstəyi
     st.markdown("""
     <div style='font-size:0.7rem;color:rgba(255,255,255,0.38);text-transform:uppercase;
-                letter-spacing:0.07em;margin-bottom:8px;font-family:var(--font-main);'>
-        Dil Dəstəyi
-    </div>
+                letter-spacing:0.07em;margin-bottom:8px;'>Dil Dəstəyi</div>
     <div class="lang-chips">
         <span class="lang-chip">🇦🇿 Azərbaycan</span>
         <span class="lang-chip">🇬🇧 İngilis</span>
         <span class="lang-chip">🇷🇺 Rus</span>
     </div>
-    <div style='font-size:0.7rem;color:rgba(255,255,255,0.28);margin-top:7px;
-                font-family:var(--font-main);'>
+    <div style='font-size:0.7rem;color:rgba(255,255,255,0.28);margin-top:7px;'>
         Dil avtomatik aşkarlanır
     </div>
     """, unsafe_allow_html=True)
@@ -525,12 +394,14 @@ with st.sidebar:
     with col2:
         if st.button("↺ Yenilə", use_container_width=True):
             st.cache_resource.clear()
+            st.session_state.cache_name  = None
+            st.session_state.cache_ready = False
             st.rerun()
 
     st.markdown("""
     <div style='font-size:0.67rem;color:rgba(255,255,255,0.18);text-align:center;
-                margin-top:28px;line-height:1.7;font-family:var(--font-main);'>
-        TARİX AI v2.0<br>Gemini 2.5 Flash
+                margin-top:28px;line-height:1.7;'>
+        TARİX AI v3.0<br>Gemini 2.5 Flash · Context Cache
     </div>
     """, unsafe_allow_html=True)
 
@@ -548,16 +419,25 @@ st.markdown("""
             <span class="badge">📚 Fakültə Məlumatları</span>
             <span class="badge">👨‍🏫 Əməkdaşlar</span>
             <span class="badge">📋 Tədris Prosesi</span>
-            <span class="badge">⚡ Gemini 2.5 Flash</span>
+            <span class="badge">⚡ Context Cache</span>
         </div>
     </div>
 </div>
 <div class="accent-bar"></div>
 """, unsafe_allow_html=True)
 
-# Excel tapılmadıqda xəbərdarlıq
 if not KNOWLEDGE_FILE.exists():
-    st.warning(f"⚠️ Məlumat bazası tapılmadı: `{KNOWLEDGE_FILE.name}` faylını bu qovluğa əlavə edin.")
+    st.warning(f"⚠️ `{KNOWLEDGE_FILE.name}` faylını bu qovluğa əlavə edin.")
+
+# ── Cache-i bir dəfə yarat ───────────────────
+if not st.session_state.cache_ready and GEMINI_API_KEY:
+    knowledge = load_knowledge()
+    system    = build_system("az")  # cache dil-neytral saxlanılır
+    name      = create_cache(knowledge, system)
+    st.session_state.cache_name  = name
+    st.session_state.cache_ready = True
+
+knowledge = load_knowledge()
 
 # ── Mesaj tarixçəsi ──────────────────────────
 if not st.session_state.messages:
@@ -589,13 +469,13 @@ if prompt := st.chat_input("Sualınızı yazın…"):
     with st.chat_message("assistant", avatar="🏛️"):
         with st.spinner(""):
             try:
-                knowledge = load_knowledge()
-                lang      = detect_language(prompt)
-                system    = build_system(lang, knowledge)
-                answer    = ask_gemini(
-                    system,
+                lang   = detect_language(prompt)
+                answer = ask_gemini(
+                    lang,
                     st.session_state.messages[:-1],
-                    prompt
+                    prompt,
+                    st.session_state.cache_name,
+                    knowledge,
                 )
                 st.session_state.total_queries += 1
             except Exception as e:
