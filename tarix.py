@@ -291,6 +291,97 @@ def detect_language(text: str) -> str:
 
 
 # ─────────────────────────────────────────────
+# MODERASIYA — Təhqir və Rüşvət Aşkarlaması
+# ─────────────────────────────────────────────
+_INSULT_AZ = {
+    "axmaq","sərsəm","idiot","aptal","sən nəsən","get","it","eşşək","bok",
+    "siktir","orospu","fahişə","heyvan","mal","gic","dəli","dəlisən",
+    "gedin","sizə","pox","köpək","köpəkoğlu","nə danışırsan",
+}
+_INSULT_RU = {
+    "идиот","дурак","идите","пошёл","пошли","тупой","урод","сволочь",
+    "скотина","баран","придурок","заткнись","блять","блядь","хуй","пиздец",
+    "мудак","козёл","чёрт","нахуй","ебать",
+}
+_INSULT_EN = {
+    "idiot","stupid","moron","shut up","dumb","fool","jerk","screw you",
+    "ass","bastard","bitch","damn you","go away","hate you",
+}
+
+_BRIBE_AZ = {
+    "pul verəcəm","pul verəm","ödəyərəm","rüşvət","haqq verəm",
+    "maaş verəm","nə istəsən verəm","sənə pul","ödəniş edərəm",
+    "qazanc","əlavə ödəniş","pul al","pul götür",
+}
+_BRIBE_RU = {
+    "дам деньги","заплачу","взятка","вознаграждение","заплатить",
+    "деньги дам","сколько хочешь","отблагодарю","денег дам",
+}
+_BRIBE_EN = {
+    "pay you","give you money","bribe","reward you","tip you",
+    "money for you","how much","i'll pay","will pay",
+}
+
+def _contains(text: str, keywords: set) -> bool:
+    t = text.lower()
+    return any(kw in t for kw in keywords)
+
+def moderate(text: str, lang: str) -> str | None:
+    """
+    Qayda pozuntusu aşkarlanırsa hazır cavab qaytarır.
+    Heç bir problem yoxdursa None qaytarır.
+    """
+    all_insults = _INSULT_AZ | _INSULT_RU | _INSULT_EN
+    all_bribes  = _BRIBE_AZ  | _BRIBE_RU  | _BRIBE_EN
+
+    if _contains(text, all_bribes):
+        return {
+            "az": (
+                "Hörmətli tələbə, bu kanalda hər hansı maddi təklif və ya ödəniş cəhdi "
+                "qəti qəbuledilməzdir. Fakültənin rəsmi elektron köməkçisi yalnız qanuni "
+                "və etik çərçivədə fəaliyyət göstərir. Belə müraciətlər qeydə alınır və "
+                "müvafiq strukturlara ötürülə bilər.\n\n"
+                "Hörmətlə, TARİX AI — Bakı Dövlət Universiteti, Tarix Fakültəsi."
+            ),
+            "ru": (
+                "Уважаемый студент, любые предложения материального характера в данном "
+                "канале являются абсолютно недопустимыми. Официальный электронный помощник "
+                "факультета функционирует исключительно в рамках законных и этических норм. "
+                "Подобные обращения фиксируются и могут быть переданы в соответствующие структуры.\n\n"
+                "С уважением, TARIX AI — Бакинский государственный университет, Исторический факультет."
+            ),
+            "en": (
+                "Dear Student, any offer of a financial or material nature through this channel "
+                "is strictly unacceptable. The Faculty's official digital assistant operates "
+                "exclusively within legal and ethical boundaries. Such communications are recorded "
+                "and may be referred to the relevant authorities.\n\n"
+                "Respectfully, TARIX AI — Baku State University, Faculty of History."
+            ),
+        }.get(lang, "")
+
+    if _contains(text, all_insults):
+        return {
+            "az": (
+                "Hörmətli tələbə, Bakı Dövlət Universitetinin rəsmi kommunikasiya kanalında "
+                "nəzakətsiz ifadələrə yer yoxdur. Xahiş olunur ki, müraciətlərinizi ədəbi "
+                "dildə və hörmətli tərzdə bildirəsiniz. Yardım etməkdən məmnuniyyət duyacağıq."
+            ),
+            "ru": (
+                "Уважаемый студент, в официальном канале коммуникации Бакинского государственного "
+                "университета недопустимо использование некорректных выражений. Просим Вас "
+                "обращаться в вежливой и корректной форме — мы готовы оказать Вам необходимую помощь."
+            ),
+            "en": (
+                "Dear Student, the use of disrespectful language is not appropriate within "
+                "the official communication channel of Baku State University. We kindly request "
+                "that you address your inquiries in a courteous manner — we are ready to assist you."
+            ),
+        }.get(lang, "")
+
+    return None
+
+
+# ─────────────────────────────────────────────
 # SİSTEM PROMPTU (dil üzrə, məlumat bazasız)
 # ─────────────────────────────────────────────
 LANG_RULES = {
@@ -621,7 +712,12 @@ if prompt := st.chat_input("Sualınızı yazın…"):
         with st.spinner(""):
             try:
                 lang   = detect_language(prompt)
-                answer = ask_gemini(
+                moderated = moderate(prompt, lang)
+                if moderated is not None:
+                    answer = moderated
+                    st.session_state.total_queries += 1
+                else:
+                    answer = ask_gemini(
                     lang,
                     st.session_state.messages[:-1],
                     prompt,
