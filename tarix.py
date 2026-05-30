@@ -464,10 +464,19 @@ def ask_gemini(lang: str, history: list, message: str,
 # ─────────────────────────────────────────────
 # SESSION STATE
 # ─────────────────────────────────────────────
-if "messages"      not in st.session_state: st.session_state.messages      = []
-if "total_queries" not in st.session_state: st.session_state.total_queries = 0
-if "cache_name"    not in st.session_state: st.session_state.cache_name    = None
-if "cache_ready"   not in st.session_state: st.session_state.cache_ready   = False
+if "messages"         not in st.session_state: st.session_state.messages         = []
+if "total_queries"    not in st.session_state: st.session_state.total_queries    = 0
+if "cache_name"       not in st.session_state: st.session_state.cache_name       = None
+if "cache_ready"      not in st.session_state: st.session_state.cache_ready      = False
+if "cache_created_at" not in st.session_state: st.session_state.cache_created_at = 0
+
+# Cache-in vaxtı keçibsə avtomatik sıfırla (TTL-dən 5 dəq əvvəl)
+_cache_age = time.time() - st.session_state.cache_created_at
+if st.session_state.cache_ready and _cache_age > (CACHE_TTL_SEC - 300):
+    st.session_state.cache_name      = None
+    st.session_state.cache_ready     = False
+    st.session_state.cache_created_at = 0
+    st.cache_resource.clear()
 
 
 # ─────────────────────────────────────────────
@@ -575,8 +584,9 @@ if not st.session_state.cache_ready and GEMINI_API_KEY:
     knowledge = load_knowledge()
     system    = build_system("az")  # cache dil-neytral saxlanılır
     name      = create_cache(knowledge, system)
-    st.session_state.cache_name  = name
-    st.session_state.cache_ready = True
+    st.session_state.cache_name       = name
+    st.session_state.cache_ready      = True
+    st.session_state.cache_created_at = time.time()
 
 knowledge = load_knowledge()
 
@@ -620,7 +630,17 @@ if prompt := st.chat_input("Sualınızı yazın…"):
                 )
                 st.session_state.total_queries += 1
             except Exception as e:
-                answer = f"⚠️ Xəta baş verdi: `{e}`"
+                err_str = str(e)
+                if "403" in err_str or "PERMISSION_DENIED" in err_str or "CachedContent not found" in err_str:
+                    st.session_state.cache_name  = None
+                    st.session_state.cache_ready = False
+                    try:
+                        answer = ask_gemini(lang, st.session_state.messages[:-1], prompt, None, knowledge)
+                        st.session_state.total_queries += 1
+                    except Exception as e2:
+                        answer = f"⚠️ Xəta baş verdi: `{e2}`"
+                else:
+                    answer = f"⚠️ Xəta baş verdi: `{e}`"
         st.markdown(answer)
 
     st.session_state.messages.append({"role": "assistant", "content": answer})
